@@ -1,0 +1,152 @@
+hostname $HOSTNAME
+! despliegue de VLANs
+! configuración de IPs para cada interface vlans
+ip domain-name $DOMAIN
+crypto key generate rsa mod 2048
+ip ssh ver 2
+username cisco priv 15 secret C1sco12345
+
+logging origin-id ip
+logging monitor informational
+logging host $ISE_IP transport UDP port 20514
+service timestamps log datetime localtime show-timezone msec
+service timestamps deb datetime localtime show-timezone msec
+
+
+aaa new-model
+radius server ISE01
+	address ipv4 $ISE_IP auth-port 1812 acc 1813
+	key $KEY
+	
+aaa group server radius ISE-GROUP_Dot1X
+	server name ISE01
+
+aaa server radius dynamic-author
+		client $ISE_IP server-key $KEY
+		auth-type any
+		
+aaa authentication dot1x default group ISE-GROUP_Dot1X
+aaa authorization network default group ISE-GROUP_Dot1X
+aaa authorization auth-proxy default group ISE-GROUP_Dot1X
+aaa accounting update periodic 1440
+aaa accounting auth-proxy default start-stop group ISE-GROUP_Dot1X
+aaa accounting dot1x default start-stop group ISE-GROUP_Dot1X
+aaa accounting system default start-stop group ISE-GROUP_Dot1X
+
+cdp run
+lldp run
+
+device-sensor filter-list dhcp list TLV-DHCP
+	option name host-name 
+	option name requested-address
+	option name parameter-request-list
+	option name class-identifier
+	option name client-identifier
+
+device-sensor filter-spec dhcp include list TLV-DHCP
+
+device-sensor filter-list cdp list TLV-CDP
+	tlv name device-name
+	tlv name address-type
+	tlv name capabilities-type
+	tlv name platform-type
+	
+device-sensor filter-spec cdp include list TLV-CDP
+
+device-sensor filter-list lldp list TLV-LLDP
+	tlv name system-name
+	tlv name system-description
+	
+device-sensor filter-spec lldp include list TLV-LLDP
+
+device-sensor accounting
+
+device-sensor notify all-changes
+
+
+epm logging
+epm access-control open
+
+authentication mac-move permit
+
+snmp-server host $ISE_IP $SNMP_COMMUNITY
+
+snmp-server enable traps mac-notification change move threshold
+mac address-table notification change interval 1
+mac address-table notification mac-move
+
+radius-server vsa send authentication
+radius-server vsa send accounting 
+radius-server attribute 6 on-for-login-auth
+radius-server attribute 8 include-in-access-req
+radius-server attribute 25 access-request include 
+radius-server attribute 31 mac format ietf upper-case
+radius-server attribute 31 send nas-port-detail
+radius-server dead-criteria time 5 tries 3
+radius-server deadtime 10
+
+access-session template monitor 
+
+
+dot1x system-auth-control
+dot1x critical eapol
+
+no ip http server 
+no ip http secure-server
+
+ip radius source-interface $vlan vrf $vrf
+
+
+ip access-list extended GUEST-REDIRECT
+	deny udp any any eq domain
+	deny udp any eq bootpc any eq bootps
+	deny tcp any host $ISE_IP eq 8443
+	deny tcp any host $ISE_IP eq 8905
+	permit ip any any
+	
+ip access-list extended ACL-DEFAULT_BASIC
+	permit udp any eq bootpc any eq bootps
+	permit udp any any eq domain
+	permit ip any host $ISE_IP
+	permit ip any host $Service01
+	permit ip any host $Service02
+	permit icmp any any
+	deny ip any any
+
+ip access-list extended ACL_WEBAUTH_REDIRECT
+	permit tcp any any eq www
+	permit tcp any any eq 443
+
+interface range gigabitethernet 1/0/1 - 24
+	description dot1x port
+	switchport mode access
+	switchport access vlan $Quarantine_Vlan
+	
+	authentication event fail action next-method
+	logging event link-status
+	authentication event server dead action reinitialize vlan 999
+	authentication event server dead authorize voice
+	authentication event server alive action reinitialize
+	authentication host-mode multi-auth
+	authentication open
+	authentication order dot1x mab
+	authentication priority dot1x mab
+	authentication port-control auto 
+	authentication periodic
+	authentication timer reauthenticate server
+	authentication timer inactivity server
+	authentication violation restrict
+	snmp trap mac-notification change added
+	snmp trap mac-notification change removed
+	mab
+	dot1x pae authenticator
+	dot1x timeout tx-period 10
+	
+	spanning-tree portfast 
+	spanning-tree bpduguard enable
+	no shut
+	
+wr
+!
+
+
