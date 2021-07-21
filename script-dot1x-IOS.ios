@@ -128,7 +128,7 @@ interface range gigabitethernet 1/0/1 - 24
 	authentication event server dead authorize voice
 	authentication event server alive action reinitialize
 	authentication host-mode multi-auth
-	authentication open
+	!authentication open
 	authentication order dot1x mab
 	authentication priority dot1x mab
 	authentication port-control auto 
